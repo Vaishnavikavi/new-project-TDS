@@ -3,8 +3,9 @@ import uuid
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-import time
-import uuid
+from fastapi import Header
+from typing import Optional
+import base64
 
 from collections import deque
 from prometheus_client import Counter, generate_latest
@@ -43,7 +44,18 @@ async def add_headers(request, call_next):
 
     return response
 
+TOTAL_ORDERS = 45
+RATE_LIMIT = 17
+WINDOW = 10  # seconds
 
+# For idempotency
+idempotency_store = {}
+
+# For rate limiting
+client_requests = {}
+
+# Order ID generator
+next_order_id = 1
 @app.get("/stats")
 def stats(values: str = Query(...)):
     nums = [int(x.strip()) for x in values.split(",") if x.strip()]
@@ -252,3 +264,92 @@ def healthz():
 @app.get("/logs/tail")
 def logs_tail(limit: int = 10):
     return list(logs)[-limit:]
+
+
+def encode_cursor(index: int):
+    return base64.b64encode(str(index).encode()).decode()
+
+
+def decode_cursor(cursor: Optional[str]):
+    if not cursor:
+        return 0
+    return int(base64.b64decode(cursor.encode()).decode())
+
+def check_rate_limit(client_id: str):
+    now = time.time()
+
+    if client_id not in client_requests:
+        client_requests[client_id] = []
+
+    requests = client_requests[client_id]
+
+    # Keep only requests from last 10 seconds
+    requests[:] = [t for t in requests if now - t < WINDOW]
+
+    if len(requests) >= RATE_LIMIT:
+        return False
+
+    requests.append(now)
+    return True
+
+
+@app.post("/orders", status_code=201)
+def create_order(
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    client_id: str = Header(..., alias="X-Client-Id")
+):
+    global next_order_id
+
+    if not check_rate_limit(client_id):
+        return Response(
+            status_code=429,
+            headers={"Retry-After": "10"}
+        )
+
+    if idempotency_key in idempotency_store:
+        return idempotency_store[idempotency_key]
+
+    order = {
+        "id": next_order_id
+    }
+
+    next_order_id += 1
+
+    idempotency_store[idempotency_key] = order
+
+    return order
+
+@app.get("/orders")
+def list_orders(
+    limit: int = 10,
+    cursor: str = None,
+    x_client_id: str = Header(..., alias="X-Client-Id")
+):
+    if not check_rate_limit(x_client_id):
+        return Response(
+            status_code=429,
+            headers={"Retry-After": "10"}
+        )
+
+    start = decode_cursor(cursor)
+
+    end = min(start + limit, TOTAL_ORDERS)
+
+    items = []
+
+    for i in range(start + 1, end + 1):
+        items.append({
+            "id": i
+        })
+
+    next_cursor = None
+
+    if end < TOTAL_ORDERS:
+        next_cursor = encode_cursor(end)
+
+    return {
+        "items": items,
+        "next_cursor": next_cursor
+    }
+
+
