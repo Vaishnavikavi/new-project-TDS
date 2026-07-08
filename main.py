@@ -84,3 +84,69 @@ def verify(request: TokenRequest):
             status_code=401,
             content={"valid": False},
         )
+
+
+import os
+import yaml
+from dotenv import dotenv_values
+from fastapi import Request
+
+DEFAULTS = {
+    "port": 8000,
+    "workers": 1,
+    "debug": False,
+    "log_level": "info",
+    "api_key": "default-secret-000",
+}
+
+def to_bool(value):
+    return str(value).lower() in ("true", "1", "yes", "on")
+
+def coerce(key, value):
+    if key in ("port", "workers"):
+        return int(value)
+    if key == "debug":
+        return to_bool(value)
+    return str(value)
+
+@app.get("/effective-config")
+def effective_config(request: Request):
+    config = DEFAULTS.copy()
+
+    # YAML
+    with open("config.development.yaml") as f:
+        config.update(yaml.safe_load(f))
+
+    # .env
+    env_file = dotenv_values(".env")
+    if "APP_PORT" in env_file:
+        config["port"] = int(env_file["APP_PORT"])
+    if "NUM_WORKERS" in env_file:
+        config["workers"] = int(env_file["NUM_WORKERS"])
+    if "APP_LOG_LEVEL" in env_file:
+        config["log_level"] = env_file["APP_LOG_LEVEL"]
+
+    # OS environment
+    if os.getenv("APP_PORT"):
+        config["port"] = int(os.getenv("APP_PORT"))
+    if os.getenv("APP_WORKERS"):
+        config["workers"] = int(os.getenv("APP_WORKERS"))
+    if os.getenv("APP_DEBUG"):
+        config["debug"] = to_bool(os.getenv("APP_DEBUG"))
+    if os.getenv("APP_LOG_LEVEL"):
+        config["log_level"] = os.getenv("APP_LOG_LEVEL")
+    if os.getenv("APP_API_KEY"):
+        config["api_key"] = os.getenv("APP_API_KEY")
+
+    # CLI overrides
+    overrides = request.query_params.getlist("set")
+
+    for item in overrides:
+        if "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        config[key] = coerce(key, value)
+
+    config["api_key"] = "****"
+
+    return config
