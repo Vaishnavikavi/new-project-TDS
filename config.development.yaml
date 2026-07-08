@@ -1,0 +1,5 @@
+port: 8975
+workers: 12
+debug: false
+log_level: info
+api_key: key-z04rlf1kbo
