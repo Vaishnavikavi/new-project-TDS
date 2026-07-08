@@ -12,7 +12,6 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -149,3 +148,53 @@ def effective_config(request: Request):
     config["api_key"] = "****"
 
     return config
+
+
+
+
+from fastapi import Header, HTTPException
+from pydantic import BaseModel
+from typing import List
+
+class Event(BaseModel):
+    user: str
+    amount: float
+    ts: int
+
+class AnalyticsRequest(BaseModel):
+    events: List[Event]
+
+API_KEY = "ak_lhd3a560ypjj7jmp6gpax9ik"
+
+@app.post("/analytics")
+def analytics(
+    request: AnalyticsRequest,
+    x_api_key: str = Header(None)
+):
+    if x_api_key != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized"
+        )
+
+    events = request.events
+
+    revenue = 0.0
+    totals = {}
+
+    for event in events:
+        if event.amount > 0:
+            revenue += event.amount
+            totals[event.user] = totals.get(event.user, 0) + event.amount
+
+    top_user = max(totals, key=totals.get) if totals else ""
+
+    return {
+        "email": EMAIL,
+        "total_events": len(events),
+        "unique_users": len(set(e.user for e in events)),
+        "revenue": revenue,
+        "top_user": top_user,
+    }
+
+
