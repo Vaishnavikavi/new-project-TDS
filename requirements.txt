@@ -4,3 +4,4 @@ PyJWT
 cryptography
 PyYAML
 python-dotenv
+prometheus-client
