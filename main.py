@@ -52,3 +52,36 @@ ed+zclR6BcmNNo/WVfJ4xyCLSf0BCOgdTgW6PdaChd1l9VDetJZVEgC5tkyvXsfI
 SI6iyrYbKR0NEBSqq4XkadEjsCs4F1RncsS4LlgniT7GlkL9Mce3b0wGLs9/7ZIX
 dQIDAQAB
 -----END PUBLIC KEY-----"""
+
+import jwt
+from jwt import InvalidTokenError
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+class TokenRequest(BaseModel):
+    token: str
+
+@app.post("/verify")
+def verify(request: TokenRequest):
+    try:
+        payload = jwt.decode(
+            request.token,
+            PUBLIC_KEY,
+            algorithms=["RS256"],
+            issuer="https://idp.exam.local",
+            audience="tds-1st4at3m.apps.exam.local",
+        )
+
+        return {
+            "valid": True,
+            "email": payload["email"],
+            "sub": payload["sub"],
+            "aud": payload["aud"],
+        }
+
+    except InvalidTokenError:
+        raise HTTPException(
+            status_code=401,
+            detail={"valid": False},
+        )
