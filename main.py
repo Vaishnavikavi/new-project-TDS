@@ -3,7 +3,12 @@ import uuid
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+import time
+import uuid
 
+from collections import deque
+from prometheus_client import Counter, generate_latest
+from fastapi.responses import Response
 ALLOWED_ORIGIN = "https://dash-3dg4dj.example.com"
 EMAIL = "24ds2000025@ds.study.iitm.ac.in"
 
@@ -18,13 +23,23 @@ app.add_middleware(
 @app.middleware("http")
 async def add_headers(request, call_next):
     start = time.perf_counter()
+    request_id = str(uuid.uuid4())
+
+    http_requests_total.inc()
 
     response = await call_next(request)
 
     elapsed = time.perf_counter() - start
 
-    response.headers["X-Request-ID"] = str(uuid.uuid4())
+    response.headers["X-Request-ID"] = request_id
     response.headers["X-Process-Time"] = f"{elapsed:.6f}"
+
+    logs.append({
+        "level": "INFO",
+        "ts": time.time(),
+        "path": str(request.url.path),
+        "request_id": request_id,
+    })
 
     return response
 
@@ -197,4 +212,43 @@ def analytics(
         "top_user": top_user,
     }
 
+START_TIME = time.time()
 
+http_requests_total = Counter(
+    "http_requests_total",
+    "Total HTTP requests"
+)
+
+logs = deque(maxlen=1000)
+
+@app.get("/work")
+def work(n: int = 1):
+    # Do K units of work
+    for _ in range(n):
+        pass
+
+    return {
+        "email": EMAIL,
+        "done": n
+    }
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(
+        generate_latest(),
+        media_type="text/plain"
+    )
+
+
+@app.get("/healthz")
+def healthz():
+    return {
+        "status": "ok",
+        "uptime_s": time.time() - START_TIME
+    }
+
+
+@app.get("/logs/tail")
+def logs_tail(limit: int = 10):
+    return list(logs)[-limit:]
