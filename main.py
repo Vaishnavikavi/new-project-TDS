@@ -9,7 +9,7 @@ import base64
 
 from collections import deque
 from prometheus_client import Counter, generate_latest
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse
 ALLOWED_ORIGIN = "https://dash-3dg4dj.example.com"
 EMAIL = "24ds2000025@ds.study.iitm.ac.in"
 
@@ -301,11 +301,11 @@ def create_order(
     global next_order_id
 
     if not check_rate_limit(client_id):
-        return Response(
-            status_code=429,
-            headers={"Retry-After": "10"}
-        )
-
+        return JSONResponse(
+    status_code=429,
+    content={"error": "Rate limit exceeded"},
+    headers={"Retry-After": "10"},
+)
     if idempotency_key in idempotency_store:
         return idempotency_store[idempotency_key]
 
@@ -326,10 +326,11 @@ def list_orders(
     x_client_id: str = Header(..., alias="X-Client-Id")
 ):
     if not check_rate_limit(x_client_id):
-        return Response(
-            status_code=429,
-            headers={"Retry-After": "10"}
-        )
+        return JSONResponse(
+    status_code=429,
+    content={"error": "Rate limit exceeded"},
+    headers={"Retry-After": "10"},
+)
 
     start = decode_cursor(cursor)
 
