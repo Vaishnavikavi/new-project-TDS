@@ -55,7 +55,6 @@ dQIDAQAB
 
 import jwt
 from jwt import InvalidTokenError
-from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -81,7 +80,7 @@ def verify(request: TokenRequest):
         }
 
     except InvalidTokenError:
-        raise HTTPException(
+        return JSONResponse(
             status_code=401,
-            detail={"valid": False},
+            content={"valid": False},
         )
